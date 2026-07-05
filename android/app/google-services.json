@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "267581189295",
+    "project_id": "ai-remember-e970c",
+    "storage_bucket": "ai-remember-e970c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:267581189295:android:0056c03821cc473f22785a",
+        "android_client_info": {
+          "package_name": "com.rememberai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "267581189295-g3nsk0okamjprl5u9l17n72t0arv5m0h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rememberai",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "267581189295-km76vrnh723864u6g5gvl22pgg95d884.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhkwg-mM0BWlMD4vCGm7Zl0FiZltzqVRM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "267581189295-km76vrnh723864u6g5gvl22pgg95d884.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
