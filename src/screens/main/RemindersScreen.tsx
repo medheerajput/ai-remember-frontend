@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,10 +11,17 @@ import {
   Text,
   TextInput,
   View,
+  Platform
 } from 'react-native';
-import {useFocusEffect} from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import {
+  cancelReminderNotification,
+  scheduleReminderNotification,
+  syncReminderNotifications,
+} from '../../services/localNotificationService';
 
-import {useAuth} from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   ApiReminder,
   completeReminder,
@@ -54,8 +61,24 @@ const formatReminderDate = (value: string) => {
   });
 };
 
+const formatEditDate = (date: Date) => {
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const formatEditTime = (date: Date) => {
+  return date.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
 const RemindersScreen = () => {
-  const {getIdToken} = useAuth() as any;
+  const { getIdToken } = useAuth() as any;
 
   const [activeFilter, setActiveFilter] =
     useState<ReminderFilter>('upcoming');
@@ -67,7 +90,8 @@ const RemindersScreen = () => {
   const [editReminder, setEditReminder] = useState<ApiReminder | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editDateTime, setEditDateTime] = useState('');
+  const [editDate, setEditDate] = useState<Date>(new Date());
+  const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
 
   const loadReminders = useCallback(
     async (showLoader = true) => {
@@ -84,6 +108,14 @@ const RemindersScreen = () => {
         );
 
         setReminders(data);
+
+        // Important:
+        // Do not block UI loading for notification scheduling.
+        if (activeFilter === 'upcoming') {
+          syncReminderNotifications(data).catch(error => {
+            console.log('Reminder notification sync failed:', error);
+          });
+        }
       } catch (error) {
         Alert.alert(
           'Error',
@@ -119,6 +151,7 @@ const RemindersScreen = () => {
       const token = await getIdToken();
 
       await completeReminder(token, reminderId);
+      await cancelReminderNotification(reminderId);
 
       setReminders(prev => prev.filter(item => item.id !== reminderId));
     } catch (error) {
@@ -145,6 +178,7 @@ const RemindersScreen = () => {
             const token = await getIdToken();
 
             await deleteReminder(token, reminderId);
+            await cancelReminderNotification(reminderId);
 
             setReminders(prev => prev.filter(item => item.id !== reminderId));
           } catch (error) {
@@ -164,14 +198,47 @@ const RemindersScreen = () => {
     setEditReminder(reminder);
     setEditTitle(reminder.title);
     setEditDescription(reminder.description ?? '');
-    setEditDateTime(reminder.remindAt);
+    const reminderDate = new Date(reminder.remindAt);
+
+    setEditDate(
+      Number.isNaN(reminderDate.getTime()) ? new Date() : reminderDate,
+    );
   };
 
   const closeEditModal = () => {
     setEditReminder(null);
     setEditTitle('');
     setEditDescription('');
-    setEditDateTime('');
+    setEditDate(new Date());
+    setPickerMode(null);
+  };
+  const handleDateTimeChange = (_event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setPickerMode(null);
+    }
+
+    if (!selectedDate || !pickerMode) {
+      return;
+    }
+
+    setEditDate(previousDate => {
+      const nextDate = new Date(previousDate);
+
+      if (pickerMode === 'date') {
+        nextDate.setFullYear(selectedDate.getFullYear());
+        nextDate.setMonth(selectedDate.getMonth());
+        nextDate.setDate(selectedDate.getDate());
+      }
+
+      if (pickerMode === 'time') {
+        nextDate.setHours(selectedDate.getHours());
+        nextDate.setMinutes(selectedDate.getMinutes());
+        nextDate.setSeconds(0);
+        nextDate.setMilliseconds(0);
+      }
+
+      return nextDate;
+    });
   };
 
   const handleSaveEdit = async () => {
@@ -180,20 +247,14 @@ const RemindersScreen = () => {
     }
 
     const cleanTitle = editTitle.trim();
-    const cleanDateTime = editDateTime.trim();
 
     if (!cleanTitle) {
       Alert.alert('Missing title', 'Please enter reminder title.');
       return;
     }
 
-    const date = new Date(cleanDateTime);
-
-    if (Number.isNaN(date.getTime())) {
-      Alert.alert(
-        'Invalid date',
-        'Please enter date in ISO format, for example 2026-07-07T08:30:00.000Z',
-      );
+    if (Number.isNaN(editDate.getTime())) {
+      Alert.alert('Invalid date', 'Please select a valid reminder date and time.');
       return;
     }
 
@@ -203,13 +264,15 @@ const RemindersScreen = () => {
       const updatedReminder = await updateReminder(token, editReminder.id, {
         title: cleanTitle,
         description: editDescription.trim() || null,
-        remindAt: date.toISOString(),
+        remindAt: editDate.toISOString(),
         timezone: editReminder.timezone || 'Asia/Kolkata',
         repeat: editReminder.repeat || {
           type: 'none',
           interval: 1,
         },
       });
+
+      await syncReminderNotifications([updatedReminder]);
 
       setReminders(prev =>
         prev.map(item =>
@@ -226,7 +289,7 @@ const RemindersScreen = () => {
     }
   };
 
-  const renderReminder = ({item}: {item: ApiReminder}) => {
+  const renderReminder = ({ item }: { item: ApiReminder }) => {
     const isPending = item.status === 'pending' || item.status === 'missed';
 
     return (
@@ -364,14 +427,32 @@ const RemindersScreen = () => {
                 multiline
               />
 
-              <Text style={styles.inputLabel}>Date/time ISO</Text>
-              <TextInput
-                value={editDateTime}
-                onChangeText={setEditDateTime}
-                placeholder="2026-07-07T08:30:00.000Z"
-                placeholderTextColor="#6B7280"
-                style={styles.modalInput}
-              />
+              <Text style={styles.inputLabel}>Date & time</Text>
+
+              <View style={styles.dateTimeRow}>
+                <Pressable
+                  style={styles.dateTimeButton}
+                  onPress={() => setPickerMode('date')}>
+                  <Text style={styles.dateTimeLabel}>Date</Text>
+                  <Text style={styles.dateTimeValue}>{formatEditDate(editDate)}</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.dateTimeButton}
+                  onPress={() => setPickerMode('time')}>
+                  <Text style={styles.dateTimeLabel}>Time</Text>
+                  <Text style={styles.dateTimeValue}>{formatEditTime(editDate)}</Text>
+                </Pressable>
+              </View>
+
+              {pickerMode ? (
+                <DateTimePicker
+                  value={editDate}
+                  mode={pickerMode}
+                  display="default"
+                  onChange={handleDateTimeChange}
+                />
+              ) : null}
 
               <View style={styles.modalActions}>
                 <Pressable
@@ -397,84 +478,108 @@ const RemindersScreen = () => {
 export default RemindersScreen;
 
 const styles = StyleSheet.create({
-    cardDescription: {
-  color: '#D1D5DB',
-  marginTop: 7,
-  fontSize: 13,
-  lineHeight: 18,
-},
-loadingContainer: {
-  paddingTop: 80,
-  alignItems: 'center',
-  gap: 10,
-},
-loadingText: {
-  color: '#9CA3AF',
-  fontSize: 14,
-},
-modalBackdrop: {
-  flex: 1,
-  backgroundColor: 'rgba(0,0,0,0.65)',
-  justifyContent: 'flex-end',
-},
-modalCard: {
-  backgroundColor: '#0B1020',
-  borderTopLeftRadius: 24,
-  borderTopRightRadius: 24,
-  borderWidth: 1,
-  borderColor: '#1F2937',
-  padding: 20,
-},
-modalTitle: {
-  color: '#F9FAFB',
-  fontSize: 20,
-  fontWeight: '800',
-  marginBottom: 16,
-},
-inputLabel: {
-  color: '#9CA3AF',
-  fontSize: 13,
-  fontWeight: '700',
-  marginBottom: 6,
-  marginTop: 10,
-},
-modalInput: {
-  backgroundColor: '#111827',
-  borderWidth: 1,
-  borderColor: '#1F2937',
-  borderRadius: 14,
-  paddingHorizontal: 14,
-  paddingVertical: 11,
-  color: '#F9FAFB',
-  fontSize: 14,
-},
-modalTextArea: {
-  minHeight: 80,
-  textAlignVertical: 'top',
-},
-modalActions: {
-  flexDirection: 'row',
-  justifyContent: 'flex-end',
-  gap: 10,
-  marginTop: 18,
-},
-modalCancelButton: {
-  paddingHorizontal: 16,
-  paddingVertical: 10,
-  borderRadius: 14,
-  backgroundColor: '#111827',
-},
-modalSaveButton: {
-  paddingHorizontal: 18,
-  paddingVertical: 10,
-  borderRadius: 14,
-  backgroundColor: '#7C3AED',
-},
-modalSaveText: {
-  color: '#FFFFFF',
-  fontSize: 13,
-  fontWeight: '800',
-},
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dateTimeButton: {
+    flex: 1,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dateTimeLabel: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  dateTimeValue: {
+    color: '#F9FAFB',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  cardDescription: {
+    color: '#D1D5DB',
+    marginTop: 7,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loadingContainer: {
+    paddingTop: 80,
+    alignItems: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#0B1020',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    padding: 20,
+  },
+  modalTitle: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  inputLabel: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  modalInput: {
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    color: '#F9FAFB',
+    fontSize: 14,
+  },
+  modalTextArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 18,
+  },
+  modalCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#111827',
+  },
+  modalSaveButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#7C3AED',
+  },
+  modalSaveText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#070A12',

@@ -14,6 +14,11 @@ import {
 
 import { useAuth } from '../../context/AuthContext';
 import { sendConversationMessage } from '../../services/conversationApi';
+import { fetchReminders } from '../../services/reminderApi';
+import {
+    cancelReminderNotification,
+    syncReminderNotifications,
+} from '../../services/localNotificationService';
 
 interface ChatMessage {
     id: string;
@@ -131,7 +136,17 @@ const ChatScreen = () => {
                 message: text,
                 source: 'text',
             });
+            if (
+                result.cardType === 'reminder_created' ||
+                result.cardType === 'reminder_updated'
+            ) {
+                const pendingReminders = await fetchReminders(token, 'pending');
+                await syncReminderNotifications(pendingReminders);
+            }
 
+            if (result.cardType === 'reminder_cancelled' && result.reminderId) {
+                await cancelReminderNotification(result.reminderId);
+            }
             setConversationId(result.conversationId);
 
             const assistantMessage: ChatMessage = {
