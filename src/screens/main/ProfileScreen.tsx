@@ -1,181 +1,257 @@
-import React, {useState} from 'react';
-import {Alert, ScrollView, StyleSheet, View} from 'react-native';
-import {Button, Text, TextInput} from 'react-native-paper';
+import React, {useEffect, useState} from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {useAuth} from '../../context/AuthContext';
+import {getProfile, type ProfileResponse} from '../../services/profileApi';
 
 const ProfileScreen = () => {
-  const {
-    profile,
-    logout,
-    refreshProfile,
-    updateProfileName,
-    deleteAccount,
-  } = useAuth();
+  const {logout, getIdToken} = useAuth() as any;
 
-  const [name, setName] = useState(profile?.user.name ?? '');
-  const [isSaving, setIsSaving] = useState(false);
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const user = profile?.user;
-  const subscription = profile?.subscription;
-  const aiUsage = profile?.aiUsage;
-
-  const handleUpdateName = async () => {
+  const loadProfile = async () => {
     try {
-      if (!name.trim()) {
-        Alert.alert('Required', 'Name is required.');
-        return;
-      }
+      setIsLoading(true);
 
-      setIsSaving(true);
-      await updateProfileName(name);
-      Alert.alert('Success', 'Profile updated.');
-    } catch (error: any) {
-      Alert.alert('Error', error?.message ?? 'Unable to update profile.');
+      const token = await getIdToken();
+      const data = await getProfile(token);
+
+      setProfile(data);
+    } catch (error) {
+      Alert.alert(
+        'Profile error',
+        error instanceof Error ? error.message : 'Could not load profile',
+      );
     } finally {
-      setIsSaving(false);
+      setIsLoading(false);
     }
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete account?',
-      'This will delete your account data from backend.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteAccount();
-            } catch (error: any) {
-              Alert.alert(
-                'Error',
-                error?.message ?? 'Unable to delete account.',
-              );
-            }
-          },
-        },
-      ],
-    );
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const aiUsed = profile?.aiUsage?.usedThisMonth ?? 0;
+  const aiLimit = profile?.aiUsage?.monthlyLimit ?? 300;
+  const aiRemaining = profile?.aiUsage?.remaining ?? 300;
+
+  const handleLogout = async () => {
+    await logout();
   };
 
+  const actionItems = [
+    'Manage Subscription',
+    'Edit Name',
+    'Logout',
+    'Delete Account',
+  ];
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#A78BFA" size="large" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text variant="headlineMedium" style={styles.title}>
-        Profile
-      </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}>
+        <View style={styles.profileTop}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {profile?.user?.name?.charAt(0)?.toUpperCase() || 'U'}
+            </Text>
+          </View>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Name</Text>
+          <Text style={styles.name}>{profile?.user?.name || 'User'}</Text>
+          <Text style={styles.email}>{profile?.user?.email}</Text>
+        </View>
 
-        <TextInput
-          mode="outlined"
-          value={name}
-          onChangeText={setName}
-          style={styles.input}
-        />
+        <View style={styles.infoCard}>
+          <Text style={styles.cardLabel}>Current Plan</Text>
+          <Text style={styles.cardValue}>
+            {profile?.subscription?.planId || profile?.user?.currentPlanId}
+          </Text>
 
-        <Button
-          mode="contained"
-          onPress={handleUpdateName}
-          loading={isSaving}
-          disabled={isSaving}
-          style={styles.button}>
-          Update Name
-        </Button>
-      </View>
+          <View style={styles.divider} />
 
-      <View style={styles.card}>
-        <Text style={styles.rowTitle}>Email</Text>
-        <Text style={styles.rowValue}>{user?.email ?? '-'}</Text>
+          <Text style={styles.cardLabel}>Status</Text>
+          <Text style={styles.statusText}>
+            {profile?.user?.subscriptionStatus || 'trialing'}
+          </Text>
+        </View>
 
-        <Text style={styles.rowTitle}>Subscription Status</Text>
-        <Text style={styles.rowValue}>{user?.subscriptionStatus ?? '-'}</Text>
+        <View style={styles.infoCard}>
+          <Text style={styles.cardLabel}>Monthly AI Usage</Text>
+          <Text style={styles.cardValue}>
+            {aiUsed} / {aiLimit} used
+          </Text>
+          <Text style={styles.remainingText}>{aiRemaining} remaining</Text>
+        </View>
 
-        <Text style={styles.rowTitle}>Plan</Text>
-        <Text style={styles.rowValue}>{user?.currentPlanId ?? '-'}</Text>
+        <View style={styles.actionList}>
+          {actionItems.map(item => {
+            const isDanger = item === 'Delete Account';
+            const isLogout = item === 'Logout';
 
-        <Text style={styles.rowTitle}>Billing Status</Text>
-        <Text style={styles.rowValue}>{subscription?.status ?? '-'}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.rowTitle}>AI Monthly Limit</Text>
-        <Text style={styles.rowValue}>{aiUsage?.monthlyLimit ?? 0}</Text>
-
-        <Text style={styles.rowTitle}>AI Used</Text>
-        <Text style={styles.rowValue}>{aiUsage?.usedThisMonth ?? 0}</Text>
-
-        <Text style={styles.rowTitle}>AI Remaining</Text>
-        <Text style={styles.rowValue}>{aiUsage?.remaining ?? 0}</Text>
-      </View>
-
-      <Button mode="outlined" onPress={refreshProfile} style={styles.button}>
-        Refresh Profile
-      </Button>
-
-      <Button mode="outlined" onPress={logout} style={styles.button}>
-        Logout
-      </Button>
-
-      <Button
-        mode="contained"
-        buttonColor="#EF4444"
-        onPress={handleDeleteAccount}
-        style={styles.button}>
-        Delete Account
-      </Button>
-    </ScrollView>
+            return (
+              <Pressable
+                key={item}
+                style={styles.actionItem}
+                onPress={isLogout ? handleLogout : undefined}>
+                <Text
+                  style={[
+                    styles.actionItemText,
+                    isDanger && styles.dangerText,
+                  ]}>
+                  {item}
+                </Text>
+                <Text style={styles.actionArrow}>›</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 export default ProfileScreen;
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#070A12',
+  },
   container: {
     flex: 1,
     backgroundColor: '#070A12',
   },
   content: {
     padding: 20,
+    paddingBottom: 32,
   },
-  title: {
-    color: '#F9FAFB',
-    fontWeight: '700',
-    marginBottom: 20,
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#070A12',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  card: {
-    backgroundColor: '#0B1020',
-    borderRadius: 18,
-    padding: 16,
+  loadingText: {
+    color: '#9CA3AF',
+    marginTop: 12,
+  },
+  profileTop: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 24,
+  },
+  avatar: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#111827',
     borderWidth: 1,
     borderColor: '#1F2937',
-    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  label: {
-    color: '#9CA3AF',
-    marginBottom: 8,
+  avatarText: {
+    color: '#A78BFA',
+    fontSize: 34,
+    fontWeight: '800',
   },
-  input: {
-    marginBottom: 12,
-  },
-  rowTitle: {
-    color: '#9CA3AF',
-    marginTop: 8,
-  },
-  rowValue: {
+  name: {
     color: '#F9FAFB',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 14,
+  },
+  email: {
+    color: '#9CA3AF',
+    marginTop: 5,
+    fontSize: 14,
+  },
+  infoCard: {
+    backgroundColor: '#0B1020',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+  },
+  cardLabel: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  cardValue: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 6,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#1F2937',
+    marginVertical: 14,
+  },
+  statusText: {
+    color: '#A78BFA',
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 6,
+    textTransform: 'capitalize',
+  },
+  remainingText: {
+    color: '#9CA3AF',
+    marginTop: 5,
+    fontSize: 14,
+  },
+  actionList: {
+    backgroundColor: '#0B1020',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    borderRadius: 20,
+    overflow: 'hidden',
     marginTop: 4,
   },
-  button: {
-    borderRadius: 12,
-    marginBottom: 12,
+  actionItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 17,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  actionItemText: {
+    color: '#F9FAFB',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  dangerText: {
+    color: '#FCA5A5',
+  },
+  actionArrow: {
+    color: '#6B7280',
+    fontSize: 24,
   },
 });

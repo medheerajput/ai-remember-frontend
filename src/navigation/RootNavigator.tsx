@@ -4,7 +4,7 @@ import {NavigationContainer, DarkTheme} from '@react-navigation/native';
 import {useAuth} from '../context/AuthContext';
 import SplashScreen from '../screens/SplashScreen';
 import AuthStack from './AuthStack';
-import HomeScreen from '../screens/main/HomeScreen';
+import MainTabs from './MainTabs';
 
 const navigationTheme = {
   ...DarkTheme,
@@ -25,13 +25,9 @@ const RootNavigator = () => {
     return <SplashScreen />;
   }
 
-  if (isAuthenticated) {
-    return <HomeScreen />;
-  }
-
   return (
     <NavigationContainer theme={navigationTheme}>
-      <AuthStack />
+      {isAuthenticated ? <MainTabs /> : <AuthStack />}
     </NavigationContainer>
   );
 };

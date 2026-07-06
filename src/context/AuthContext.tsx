@@ -25,6 +25,8 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
 
+  getIdToken: () => Promise<string>;
+
   continueWithGoogle: () => Promise<void>;
 
   login: (email: string, password: string) => Promise<void>;
@@ -44,6 +46,16 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
 
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const getIdToken = useCallback(async () => {
+    const currentUser = auth().currentUser;
+
+    if (!currentUser) {
+      throw new Error('User not logged in');
+    }
+
+    return currentUser.getIdToken();
+  }, []);
 
   const syncBackendProfile = useCallback(
     async (user: FirebaseAuthTypes.User) => {
@@ -85,18 +97,17 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
 
     const signInResult = await GoogleSignin.signIn();
 
-    const idToken = signInResult?.idToken;
+    const googleIdToken = signInResult?.idToken;
 
-    if (!idToken) {
+    if (!googleIdToken) {
       throw new Error('Google Sign-In failed. No ID token received.');
     }
 
-    const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+    const googleCredential = auth.GoogleAuthProvider.credential(googleIdToken);
 
     await auth().signInWithCredential(googleCredential);
   }, []);
 
-  // Keep these for now. We can remove later if Google-only final.
   const login = useCallback(async (email: string, password: string) => {
     await auth().signInWithEmailAndPassword(email.trim(), password);
   }, []);
@@ -172,6 +183,8 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
       isLoading,
       isAuthenticated: Boolean(firebaseUser && profile),
 
+      getIdToken,
+
       continueWithGoogle,
 
       login,
@@ -186,6 +199,7 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
       firebaseUser,
       profile,
       isLoading,
+      getIdToken,
       continueWithGoogle,
       login,
       register,
